@@ -121,9 +121,9 @@ public class RobotContainer {
         shooterMotor1.getConfigurator().apply(pidmain);
         intakeMotor1.getConfigurator().apply(pidmain);
         shooterFeeder.getConfigurator().apply(pidmain);
-                
-        pidmain.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
         shooterMotor2.getConfigurator().apply(pidmain);        
+ 
+        pidmain.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
         intakeMotor2.getConfigurator().apply(pidmain);
 
         SparkMaxConfig config = new SparkMaxConfig();
