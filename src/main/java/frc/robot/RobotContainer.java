@@ -22,8 +22,10 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 //import edu.wpi.first.wpilibj2.command.InstantCommand;
 //import edu.wpi.first.wpilibj2.command.RunCommand;
-import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
+
+//import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
+import edu.wpi.first.wpilibj2.command.button.CommandPS4Controller;
 
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
@@ -83,10 +85,7 @@ public class RobotContainer {
 
     private double MaxSpeed = 0.5 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
-    private double hizCarpan = 1;
     private double lastPrintTime = 0.0;
-
-    //private boolean snap = false; // snaps to 45 degree angles
 
     /* Setting up bindings for necessary control of the swerve drive platform */
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
@@ -102,7 +101,8 @@ public class RobotContainer {
 
     private final Telemetry logger = new Telemetry(MaxSpeed);
 
-    private final CommandXboxController joystick = new CommandXboxController(0);
+    //private final CommandXboxController joystick = new CommandXboxController(0);
+    private final CommandPS4Controller joystick = new CommandPS4Controller(0);
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
@@ -119,11 +119,11 @@ public class RobotContainer {
         
         pidmain.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
         shooterMotor1.getConfigurator().apply(pidmain);
-        intakeMotor1.getConfigurator().apply(pidmain);
-        shooterFeeder.getConfigurator().apply(pidmain);
         shooterMotor2.getConfigurator().apply(pidmain);        
+        intakeMotor1.getConfigurator().apply(pidmain);
  
         pidmain.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
+        shooterFeeder.getConfigurator().apply(pidmain);
         intakeMotor2.getConfigurator().apply(pidmain);
 
         SparkMaxConfig config = new SparkMaxConfig();
@@ -156,9 +156,9 @@ public class RobotContainer {
         // and Y is defined as to the left according to WPILib convention.
         drivetrain.setDefaultCommand(
             drivetrain.applyRequest(() ->
-                drive.withVelocityX(-joystick.getLeftY() * MaxSpeed * hizCarpan) // Drive forward with negative Y (forward)
-                    .withVelocityY(-joystick.getLeftX() * MaxSpeed *hizCarpan) // Drive left with negative X (left)
-                    .withRotationalRate(-joystick.getRightX() * MaxAngularRate *hizCarpan) // Drive counterclockwise with negative X (left)
+                drive.withVelocityX(-joystick.getLeftY() * MaxSpeed) // Drive forward with negative Y (forward)
+                    .withVelocityY(-joystick.getLeftX() * MaxSpeed) // Drive left with negative X (left)
+                    .withRotationalRate(-joystick.getRightX() * MaxAngularRate) // Drive counterclockwise with negative X (left)
             ).unless(() -> drivingToPose)
         );
 
@@ -172,7 +172,7 @@ public class RobotContainer {
         /*joystick.b().whileTrue(drivetrain.applyRequest(() ->
                 point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
         ));*/
-        joystick.x().onTrue(Commands.runOnce(() -> {
+        joystick.square().onTrue(Commands.runOnce(() -> {
             if (intakeStatus) {
                 intakeStatus = false;
                 intakeMotor1.set(0.0);
@@ -182,9 +182,9 @@ public class RobotContainer {
                 intakeMotor1.set(0.7);
                 intakeMotor2.set(0.7);
             }
-        }));
+        }));//x -> xbox
 
-        joystick.b().onTrue(Commands.runOnce(() -> {
+        joystick.circle().onTrue(Commands.runOnce(() -> {
         if (shooterStatus) {
             shooterStatus = false;
             if(ShootlaCopy != null) ShootlaCopy.cancel();
@@ -198,13 +198,13 @@ public class RobotContainer {
             ShootlaCopy = Shootla(targetRPS);
             ShootlaCopy.schedule();
         }
-        }));
+        }));//b -> xbox
 
-        joystick.y().onTrue(Commands.runOnce(() -> {
+        joystick.triangle().onTrue(Commands.runOnce(() -> {
             if(armStatus) armController.setReference(0.0, ControlType.kPosition);
             else armController.setReference(90.0, ControlType.kPosition);
             armStatus = !armStatus;
-        }));
+        }));//y -> xbox
 
         //joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
         joystick.povUp().onTrue(Commands.runOnce(() -> {System.out.printf("[Arm] -> %.2f derece%n", armMotor.getEncoder().getPosition());}));
