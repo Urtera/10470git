@@ -9,6 +9,7 @@ import static edu.wpi.first.units.Units.*;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
+import com.ctre.phoenix6.signals.MotorAlignmentValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 
@@ -23,7 +24,7 @@ import edu.wpi.first.wpilibj2.command.Commands;
 //import edu.wpi.first.wpilibj2.command.InstantCommand;
 //import edu.wpi.first.wpilibj2.command.RunCommand;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
-
+import edu.wpi.first.wpilibj2.command.button.Trigger;
 import edu.wpi.first.wpilibj2.command.button.CommandPS5Controller;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
@@ -57,6 +58,7 @@ import com.revrobotics.spark.SparkClosedLoopController;
 //import com.pathplanner.lib.path.PathConstraints;
 //import edu.wpi.first.wpilibj2.command.SequentialCommandGroup;
 
+import com.ctre.phoenix6.controls.Follower;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.math.VecBuilder;   
 
@@ -74,7 +76,6 @@ public class RobotContainer {
     private TalonFX shooterMotor2 = new TalonFX(34, "Drivetrain");
     private TalonFX shooterFeeder = new TalonFX(35, "Drivetrain");
         
-    private SparkClosedLoopController armController = armMotor.getClosedLoopController();
     private final double kP_Translation = 1.5; 
     private final double kP_Rotation = 1.5;
     private Pose2d kTargetPose = new Pose2d(0.0, 0.0, Rotation2d.fromDegrees(0));
@@ -111,18 +112,20 @@ public class RobotContainer {
         pidmain.Slot0.kP = 0.65;
         pidmain.Slot0.kD = 0.065;
 
-        pidmain.CurrentLimits.SupplyCurrentLimit = 50;
+        pidmain.CurrentLimits.SupplyCurrentLimit = 35;
         pidmain.CurrentLimits.SupplyCurrentLimitEnable = true;
         pidmain.MotorOutput.NeutralMode = NeutralModeValue.Coast;
         
         pidmain.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
         shooterMotor1.getConfigurator().apply(pidmain);
-        shooterMotor2.getConfigurator().apply(pidmain);        
+        shooterMotor2.getConfigurator().apply(pidmain);
         intakeMotor1.getConfigurator().apply(pidmain);
         shooterFeeder.getConfigurator().apply(pidmain);
 
         pidmain.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
         intakeMotor2.getConfigurator().apply(pidmain);
+
+        shooterMotor2.setControl(new Follower(shooterMotor1.getDeviceID(), MotorAlignmentValue.Aligned));
 
         SparkMaxConfig config = new SparkMaxConfig();
         config.smartCurrentLimit(35);
@@ -137,10 +140,6 @@ public class RobotContainer {
         armConfig.idleMode(IdleMode.kBrake);
         armConfig.inverted(false);
         armConfig.encoder.positionConversionFactor(360.0/80);
-
-        armConfig.closedLoop
-            .pid(0.1, 0.0, 0.0)
-            .outputRange(-1, 1);
 
         armMotor.configure(armConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
         armMotor.getEncoder().setPosition(0);
@@ -167,9 +166,6 @@ public class RobotContainer {
                 drivetrain.applyRequest(() -> idle).ignoringDisable(true)
         );
 
-        /*joystick.b().whileTrue(drivetrain.applyRequest(() ->
-                point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
-        ));*/
         joystick.square().onTrue(Commands.runOnce(() -> {
             if (intakeStatus) {
                 intakeStatus = false;
@@ -199,20 +195,18 @@ public class RobotContainer {
         }));//circle -> ps5
 
         joystick.triangle().onTrue(Commands.runOnce(() -> {
-            if(!armStatus) armController.setReference(0.0, ControlType.kPosition);
-            else armController.setReference(180.0, ControlType.kPosition);
-            armStatus = !armStatus;
-        }));//triangle -> ps5
-
-        //joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
-        joystick.povUp().onTrue(Commands.runOnce(() -> {shooterMotor1.setControl(shooterVelocityRequest1.withVelocity(targetRPS));
-            shooterMotor2.setControl(shooterVelocityRequest2.withVelocity(0));}));
-        joystick.povRight().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose; System.out.println(kTargetPose);},drivetrain));
-        joystick.povDown().onTrue(Commands.runOnce(() ->{
             if(drivingToPose)  drivingToPose = false;   
             else driveToPoseCommand().schedule();
-        }));
+        }));//triangle -> ps5
 
+        joystick.povUp().whileTrue(Commands.run(() -> armMotor.set(0.3)))
+                .onFalse(Commands.runOnce(() -> armMotor.set(0.0)));
+
+        joystick.povDown().whileTrue(Commands.run(() -> armMotor.set(-0.3)))
+                .onFalse(Commands.runOnce(() -> armMotor.set(0.0)));
+
+        //joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
+        joystick.povRight().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose; System.out.println(kTargetPose);},drivetrain));
         joystick.povLeft().onTrue(Commands.runOnce(() -> {
             LimelightHelpers.SetRobotOrientation("limelight",
                 drivetrain.getState().Pose.getRotation().getDegrees(), 0, 0, 0, 0, 0);
@@ -229,6 +223,9 @@ public class RobotContainer {
                 System.out.println("Tag Error.");
             }
         }));
+        
+        new Trigger(() -> shooterStatus)
+            .onTrue(drivetrain.applyRequest(() -> brake).withTimeout(0.3));
 
         drivetrain.registerTelemetry((state) -> {
             logger.telemeterize(state);
@@ -312,7 +309,6 @@ public class RobotContainer {
     public Command Shootla(double targetRPS) {
         return Commands.run(() -> {
             shooterMotor1.setControl(shooterVelocityRequest1.withVelocity(targetRPS));
-            shooterMotor2.setControl(shooterVelocityRequest2.withVelocity(targetRPS));
             if (shooterMotor1.getVelocity().getValueAsDouble() >= targetRPS * 0.85 && shooterStatus) {
                 shooterFeeder.setControl(shooterFeederVelocityRequest.withVelocity(targetRPS));
                 FeederMotor.set(0.3);
@@ -321,7 +317,6 @@ public class RobotContainer {
         .until(() -> !shooterStatus)
         .finallyDo((interrupted) -> {
             shooterMotor1.set(0);
-            shooterMotor2.set(0);
             shooterFeeder.set(0);
             FeederMotor.set(0);
         });
