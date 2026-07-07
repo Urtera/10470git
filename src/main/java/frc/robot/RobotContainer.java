@@ -64,6 +64,7 @@ import edu.wpi.first.math.VecBuilder;
 
 public class RobotContainer {
     public boolean armStatus = false;
+    public boolean limelightStatus = true;
     public boolean intakeStatus = false;
     public boolean shooterStatus = false;
     private double targetRPS = 60;;
@@ -79,6 +80,9 @@ public class RobotContainer {
     private final double kP_Translation = 1.5; 
     private final double kP_Rotation = 1.5;
     private Pose2d kTargetPose = new Pose2d(0.0, 0.0, Rotation2d.fromDegrees(0));
+    private Pose2d kMainTargetPose = new Pose2d(-2.0, 4.0, Rotation2d.fromDegrees(0));
+    private Pose2d kAutonomousStartPose = new Pose2d(-2.0, 4.0, Rotation2d.fromDegrees(0));
+    private boolean startedOnRight = true; // true: sağda başlıyor, false: solda başlıyor
     private boolean drivingToPose = false;
 
     private double MaxSpeed = 0.5 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
@@ -104,7 +108,7 @@ public class RobotContainer {
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
     private final VelocityVoltage shooterVelocityRequest1 = new VelocityVoltage(0);
-    private final VelocityVoltage shooterVelocityRequest2 = new VelocityVoltage(0);
+    //private final VelocityVoltage shooterVelocityRequest2 = new VelocityVoltage(0);
     private final VelocityVoltage shooterFeederVelocityRequest = new VelocityVoltage(0);
 
     public RobotContainer() {
@@ -116,14 +120,16 @@ public class RobotContainer {
         pidmain.CurrentLimits.SupplyCurrentLimitEnable = true;
         pidmain.MotorOutput.NeutralMode = NeutralModeValue.Coast;
         
-        pidmain.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
-        shooterMotor1.getConfigurator().apply(pidmain);
-        shooterMotor2.getConfigurator().apply(pidmain);
-        intakeMotor1.getConfigurator().apply(pidmain);
-        shooterFeeder.getConfigurator().apply(pidmain);
-
         pidmain.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
         intakeMotor2.getConfigurator().apply(pidmain);
+
+        pidmain.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
+        shooterMotor1.getConfigurator().apply(pidmain);
+        intakeMotor1.getConfigurator().apply(pidmain);
+        
+        pidmain.Slot0.kP = 0.8;
+        pidmain.Slot0.kD = 0.08;
+        shooterFeeder.getConfigurator().apply(pidmain);
 
         shooterMotor2.setControl(new Follower(shooterMotor1.getDeviceID(), MotorAlignmentValue.Aligned));
 
@@ -166,7 +172,7 @@ public class RobotContainer {
                 drivetrain.applyRequest(() -> idle).ignoringDisable(true)
         );
 
-        joystick.square().onTrue(Commands.runOnce(() -> {
+        joystick.L1().onTrue(Commands.runOnce(() -> {
             if (intakeStatus) {
                 intakeStatus = false;
                 intakeMotor1.set(0.0);
@@ -178,17 +184,17 @@ public class RobotContainer {
             }
         }));//square -> ps5
 
-        joystick.circle().onTrue(Commands.runOnce(() -> {
+        joystick.R1().onTrue(Commands.runOnce(() -> {
         if (shooterStatus) {
             shooterStatus = false;
             if(ShootlaCopy != null) ShootlaCopy.cancel();
             shooterFeeder.set(0);
             shooterMotor1.set(0);
-            shooterMotor2.set(0);
             FeederMotor.set(0);
         } else {
             shooterStatus = true;
-            targetRPS = ((double)51.0); 
+            targetRPS = ((double)65.0);
+            FeederMotor.set(-0.3);
             ShootlaCopy = Shootla(targetRPS);
             ShootlaCopy.schedule();
         }
@@ -206,7 +212,7 @@ public class RobotContainer {
                 .onFalse(Commands.runOnce(() -> armMotor.set(0.0)));
 
         //joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
-        joystick.povRight().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose; System.out.println(kTargetPose);},drivetrain));
+        joystick.circle().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose; System.out.println(kTargetPose); limelightStatus = false;},drivetrain));
         joystick.povLeft().onTrue(Commands.runOnce(() -> {
             LimelightHelpers.SetRobotOrientation("limelight",
                 drivetrain.getState().Pose.getRotation().getDegrees(), 0, 0, 0, 0, 0);
@@ -229,6 +235,7 @@ public class RobotContainer {
 
         drivetrain.registerTelemetry((state) -> {
             logger.telemeterize(state);
+            if(limelightStatus){
             LimelightHelpers.SetRobotOrientation(
                 "limelight",
                 state.Pose.getRotation().getDegrees(),
@@ -262,7 +269,7 @@ public class RobotContainer {
                     );
                 }
             }
-        });
+        }});
     }
 
     public Command driveToPoseCommand() {
@@ -301,7 +308,7 @@ public class RobotContainer {
             double dist = currentPose.getTranslation().getDistance(kTargetPose.getTranslation());
             double degError = Math.abs(currentPose.getRotation().minus(kTargetPose.getRotation()).getDegrees());
             
-            return (!drivingToPose || (dist < 0.05 && degError < 2.0));
+            return (!drivingToPose || (dist < 0.3 && degError < 5.0));
         })
         .finallyDo((interrupted) -> drivingToPose = false); 
     }
@@ -309,9 +316,9 @@ public class RobotContainer {
     public Command Shootla(double targetRPS) {
         return Commands.run(() -> {
             shooterMotor1.setControl(shooterVelocityRequest1.withVelocity(targetRPS));
+            shooterFeeder.setControl(shooterFeederVelocityRequest.withVelocity(targetRPS));
             if (shooterMotor1.getVelocity().getValueAsDouble() >= targetRPS * 0.85 && shooterStatus) {
-                shooterFeeder.setControl(shooterFeederVelocityRequest.withVelocity(targetRPS));
-                FeederMotor.set(0.3);
+                FeederMotor.set(0.8);
             }
         })
         .until(() -> !shooterStatus)
@@ -322,9 +329,67 @@ public class RobotContainer {
         });
     }
 
-    public Command getAutonomousCommand() {
-        return Commands.none();
+    public void onTeleopInit() {
+        kTargetPose = kMainTargetPose;
+        limelightStatus = true;
     }
+
+    public Command getAutonomousCommand() {
+    double mirror = startedOnRight ? 1.0 : -1.0;
+    double firstTurnAngle = 90.0 * mirror; // sağda başladıysa +90 (sola dön), solda başladıysa -90 (sağa dön)
+
+    double startX = kAutonomousStartPose.getX();
+    double startY = kAutonomousStartPose.getY();
+        
+    return Commands.sequence(
+        Commands.runOnce(() -> limelightStatus = true),
+        // pose reset
+        Commands.runOnce(() -> drivetrain.resetPose(kAutonomousStartPose)),
+        // düz git
+        Commands.runOnce(() -> kTargetPose = new Pose2d(startX + 4.5, startY, Rotation2d.fromDegrees(0))),
+        driveToPoseCommand(),
+        // dön
+        Commands.runOnce(() -> kTargetPose = new Pose2d(kTargetPose.getX(), kTargetPose.getY(), Rotation2d.fromDegrees(firstTurnAngle))),
+        driveToPoseCommand(),
+        // arm çalıştır
+        Commands.run(() -> armMotor.set(0.3)).withTimeout(2.0),
+        Commands.runOnce(() -> armMotor.set(0.0)),
+        // intake çalıştır
+        Commands.runOnce(() -> {
+            intakeStatus = true;
+            intakeMotor1.set(0.7);
+            intakeMotor2.set(0.7);
+        }),
+        // yana git 
+        Commands.runOnce(() -> kTargetPose = new Pose2d(startX + 4.5, startY + 3.0 * mirror, Rotation2d.fromDegrees(firstTurnAngle))),
+        driveToPoseCommand(),
+        // geri dön
+        Commands.runOnce(() -> kTargetPose = new Pose2d(startX + 4.5, startY, Rotation2d.fromDegrees(0))),
+        driveToPoseCommand(),
+        // alttan geç
+        Commands.runOnce(() -> kTargetPose = new Pose2d(startX - 2.0, startY, Rotation2d.fromDegrees(0))),
+        driveToPoseCommand(),
+        // shoot pozisyonuna 
+        Commands.runOnce(() -> kTargetPose = kMainTargetPose),
+        driveToPoseCommand(),
+        // shootla
+        Commands.runOnce(() -> {
+            shooterStatus = true;
+            targetRPS = 51.0;
+            FeederMotor.set(-0.3);
+            ShootlaCopy = Shootla(targetRPS);
+            ShootlaCopy.schedule();
+        }),
+        Commands.waitSeconds(5.0),
+        Commands.runOnce(() -> {
+            shooterStatus = false;
+            if (ShootlaCopy != null) ShootlaCopy.cancel();
+            shooterFeeder.set(0);
+            shooterMotor1.set(0);
+            FeederMotor.set(0);
+        })
+    );
+}
 
 
 }
