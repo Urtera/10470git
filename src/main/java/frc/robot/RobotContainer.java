@@ -64,7 +64,7 @@ import edu.wpi.first.math.VecBuilder;
 
 public class RobotContainer {
     public boolean armStatus = false;
-    public boolean limelightStatus = true;
+    public boolean limelightStatus = false;
     public boolean intakeStatus = false;
     public boolean shooterStatus = false;
     private double targetRPS = 60;;
@@ -77,8 +77,8 @@ public class RobotContainer {
     private TalonFX shooterMotor2 = new TalonFX(34, "Drivetrain");
     private TalonFX shooterFeeder = new TalonFX(35, "Drivetrain");
         
-    private final double kP_Translation = 1.5; 
-    private final double kP_Rotation = 1.5;
+    private final double kP_Translation = 2; 
+    private final double kP_Rotation = 2;
     private Pose2d kTargetPose = new Pose2d(0.0, 0.0, Rotation2d.fromDegrees(0));
     private Pose2d kMainTargetPose = new Pose2d(-2.0, 4.0, Rotation2d.fromDegrees(0));
     private Pose2d kAutonomousStartPose = new Pose2d(-2.0, 4.0, Rotation2d.fromDegrees(0));
@@ -87,6 +87,9 @@ public class RobotContainer {
 
     private double MaxSpeed = 0.5 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
     private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
+    private double kMaxSpeed = 0.2 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
+    private double kMaxAngularRate = RotationsPerSecond.of(0.35).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
+    
     private double lastPrintTime = 0.0;
 
     /* Setting up bindings for necessary control of the swerve drive platform */
@@ -161,7 +164,7 @@ public class RobotContainer {
             drivetrain.applyRequest(() ->
                 drive.withVelocityX(-joystick.getLeftY() * MaxSpeed) // Drive forward with negative Y (forward)
                     .withVelocityY(-joystick.getLeftX() * MaxSpeed) // Drive left with negative X (left)
-                    .withRotationalRate(-joystick.getRightX() * MaxAngularRate) // Drive counterclockwise with negative X (left)
+                    .withRotationalRate(joystick.getRightX() * MaxAngularRate) // Drive counterclockwise with negative X (left)
             ).unless(() -> drivingToPose)
         );
 
@@ -193,8 +196,7 @@ public class RobotContainer {
             FeederMotor.set(0);
         } else {
             shooterStatus = true;
-            targetRPS = ((double)65.0);
-            FeederMotor.set(-0.3);
+            targetRPS = ((double)57.0);
             ShootlaCopy = Shootla(targetRPS);
             ShootlaCopy.schedule();
         }
@@ -205,14 +207,15 @@ public class RobotContainer {
             else driveToPoseCommand().schedule();
         }));//triangle -> ps5
 
-        joystick.povUp().whileTrue(Commands.run(() -> armMotor.set(0.3)))
+        joystick.povUp().whileTrue(Commands.run(() -> armMotor.set(0.1)))
                 .onFalse(Commands.runOnce(() -> armMotor.set(0.0)));
 
         joystick.povDown().whileTrue(Commands.run(() -> armMotor.set(-0.3)))
                 .onFalse(Commands.runOnce(() -> armMotor.set(0.0)));
 
         //joystick.povUp().onTrue(new RunCommand(()->SmartDashboard.putNumber("Shooter1Rpm", shooterMotor1.getEncoder().getVelocity())));
-        joystick.circle().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose; System.out.println(kTargetPose); limelightStatus = false;},drivetrain));
+        joystick.circle().onTrue(Commands.runOnce(()->{kTargetPose = drivetrain.getState().Pose; System.out.println(kTargetPose);},drivetrain));
+        joystick.square().onTrue(Commands.runOnce(()->{limelightStatus = !limelightStatus; System.err.println(limelightStatus);},drivetrain));
         joystick.povLeft().onTrue(Commands.runOnce(() -> {
             LimelightHelpers.SetRobotOrientation("limelight",
                 drivetrain.getState().Pose.getRotation().getDegrees(), 0, 0, 0, 0, 0);
@@ -231,10 +234,11 @@ public class RobotContainer {
         }));
         
         new Trigger(() -> shooterStatus)
-            .onTrue(drivetrain.applyRequest(() -> brake).withTimeout(0.3));
-
+            .whileTrue(drivetrain.applyRequest(() -> brake));
+    
         drivetrain.registerTelemetry((state) -> {
             logger.telemeterize(state);
+            System.out.println(drivetrain.getState().Pose);
             if(limelightStatus){
             LimelightHelpers.SetRobotOrientation(
                 "limelight",
@@ -274,6 +278,7 @@ public class RobotContainer {
 
     public Command driveToPoseCommand() {
         return drivetrain.applyRequest(() -> {
+            
             Pose2d currentPose = drivetrain.getState().Pose;
 
             double xError = kTargetPose.getX() - currentPose.getX();
@@ -289,18 +294,18 @@ public class RobotContainer {
             double yVel = yError * kP_Translation;
             double rotVel = angleError * kP_Rotation;
 
-            if(xVel > 0) xVel = Math.min(xVel, MaxSpeed);
-            else xVel = Math.max(xVel, -MaxSpeed);
+            if(xVel > 0) xVel = Math.min(xVel, kMaxSpeed);
+            else xVel = Math.max(xVel, -kMaxSpeed);
 
-            if(yVel > 0) yVel = Math.min(yVel, MaxSpeed);
-            else yVel = Math.max(yVel, -MaxSpeed);
+            if(yVel > 0) yVel = Math.min(yVel, kMaxSpeed);
+            else yVel = Math.max(yVel, -kMaxSpeed);
             
-            if(rotVel > 0) rotVel = Math.min(rotVel, MaxAngularRate);
-            else rotVel = Math.max(rotVel, -MaxAngularRate);
+            if(rotVel > 0) rotVel = Math.min(rotVel, kMaxAngularRate);
+            else rotVel = Math.max(rotVel, -kMaxAngularRate);
 
-            return drive.withVelocityX(xVel)
-                        .withVelocityY(yVel)
-                        .withRotationalRate(rotVel);
+            return drive.withVelocityX(-xVel)
+                        .withVelocityY(-yVel)
+                        .withRotationalRate(-rotVel);
         })
         .beforeStarting(() -> drivingToPose = true)
         .until(() -> {
@@ -308,7 +313,7 @@ public class RobotContainer {
             double dist = currentPose.getTranslation().getDistance(kTargetPose.getTranslation());
             double degError = Math.abs(currentPose.getRotation().minus(kTargetPose.getRotation()).getDegrees());
             
-            return (!drivingToPose || (dist < 0.3 && degError < 5.0));
+            return (!drivingToPose || (dist < 0.01 && degError < 3.0));
         })
         .finallyDo((interrupted) -> drivingToPose = false); 
     }
@@ -316,7 +321,7 @@ public class RobotContainer {
     public Command Shootla(double targetRPS) {
         return Commands.run(() -> {
             shooterMotor1.setControl(shooterVelocityRequest1.withVelocity(targetRPS));
-            shooterFeeder.setControl(shooterFeederVelocityRequest.withVelocity(targetRPS));
+            shooterFeeder.setControl(shooterFeederVelocityRequest.withVelocity(targetRPS*0.85));
             if (shooterMotor1.getVelocity().getValueAsDouble() >= targetRPS * 0.85 && shooterStatus) {
                 FeederMotor.set(0.8);
             }
@@ -330,8 +335,9 @@ public class RobotContainer {
     }
 
     public void onTeleopInit() {
+        limelightStatus = false;
         kTargetPose = kMainTargetPose;
-        limelightStatus = true;
+        drivetrain.resetPose(new Pose2d(0,0,drivetrain.getState().Pose.getRotation()));
     }
 
     public Command getAutonomousCommand() {
@@ -342,7 +348,6 @@ public class RobotContainer {
     double startY = kAutonomousStartPose.getY();
         
     return Commands.sequence(
-        Commands.runOnce(() -> limelightStatus = true),
         // pose reset
         Commands.runOnce(() -> drivetrain.resetPose(kAutonomousStartPose)),
         // düz git
